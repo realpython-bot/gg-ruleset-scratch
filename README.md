@@ -51,6 +51,7 @@ it first. `npm run check` reports on the repository.
 | `.gitignore`                                                                 | Keeps untracked files, such as `notes.txt`, out of Git                             |
 | `.prettierrc`, `.prettierignore`                                             | Prettier's settings, and the files it leaves as they are                           |
 | `eslint.config.js`                                                           | ESLint's rules, and which files it checks                                          |
+| `.github/workflows/check.yml`                                                | The check every pull request into `main` runs                                      |
 | `src/vendor/curbside.js`                                                     | A stand-in for Generic Curbside's pickup widget: `mountCurbside(element, { key })` |
 | `src/pickup.js`                                                              | Puts Generic Curbside's widget on the pickup page, with the key from `.env`        |
 | `.env.example`                                                               | The values `.env` needs, with a placeholder instead of the key                     |
@@ -62,3 +63,6 @@ Weekly deals run from Wednesday to Tuesday, like the printed weekly ad.
 The work arrives as issues on the project's GitHub repository. Every change goes
 through a pull request into `main`, and the pull request that finishes an issue closes
 it, with `Closes #` and the issue's number in its description.
+
+Every pull request into `main` runs the check in `.github/workflows/check.yml`: lint,
+formatting and the build, as on your computer.

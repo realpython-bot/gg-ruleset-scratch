@@ -9,10 +9,15 @@
 //
 // The checks for GitHub run once the repository has a remote called origin. They read
 // your public repository on GitHub without logging in (its main branch, issues and pull
-// requests), so they need an internet connection. Everything else works offline.
+// requests), so they need an internet connection. Everything else works offline. Before
+// the first push, an empty repository on GitHub is expected: its issues are still checked.
 //
 // From course 4 on, every change goes through a pull request. The checks for Prettier
 // and ESLint run once .prettierrc and eslint.config.js exist.
+//
+// From course 5 on, a merge into main deploys the site. The checks for deploying run once
+// .github/workflows/deploy.yml exists: Vite's base, the last deploy run, main's protection
+// and the live site.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -593,6 +598,108 @@ async function checkGoneBranches(repository) {
   }
 }
 
+// --- Deploying (course 5 on) -----------------------------------------------------------
+
+const deployWorkflow = join(projectDir, ".github", "workflows", "deploy.yml");
+
+// A project site lives at https://<owner>.github.io/<repository>/, so Vite's base has to be
+// "/<repository>/", or the live pages look for their files at the site's root.
+function checkBase(repository) {
+  const name = repository.split("/")[1];
+  const config = readFileSync(join(projectDir, "vite.config.js"), "utf8");
+  const base = /base:\s*["'`]([^"'`]*)["'`]/.exec(config)?.[1];
+  if (base === `/${name}/`) {
+    pass(`vite.config.js sets base to "/${name}/", the project site's path.`);
+  } else {
+    fail(
+      base === undefined
+        ? "vite.config.js sets no base, so the live site looks for its files at https://<you>.github.io/ instead of the project's folder."
+        : `vite.config.js sets base to "${base}", but the project site lives at /${name}/.`,
+      `set base: "/${name}/" in vite.config.js, in its own pull request.`,
+    );
+  }
+}
+
+async function checkDeploy(repository) {
+  const runs = await gitHub(`/repos/${repository}/actions/runs?branch=main&event=push&per_page=1`);
+  if (!Array.isArray(runs.body?.workflow_runs)) {
+    gitHubSkipped(runs, "the checks for the deploy run");
+  } else if (!runs.body.workflow_runs.length) {
+    // Vite's base and the live site only make sense once something has been deployed.
+    warn(
+      "GitHub Actions has no deploy run on main yet.",
+      "merge the pull request that adds .github/workflows/deploy.yml, then watch the Actions tab.",
+    );
+    return;
+  } else {
+    const [run] = runs.body.workflow_runs;
+    if (run.status !== "completed") {
+      warn(
+        `The deploy run for main is still ${run.status}.`,
+        "wait for it to finish, then run the check again.",
+      );
+    } else if (run.conclusion === "success") {
+      pass(`The last deploy run for main succeeded (${run.head_sha.slice(0, 7)}).`);
+    } else {
+      fail(
+        `The last deploy run for main ended with "${run.conclusion}", so the live site still shows the version before it.`,
+        `read the failed step's log at ${run.html_url}, then fix the cause in a pull request.`,
+      );
+    }
+  }
+
+  checkBase(repository);
+
+  const rules = await gitHub(`/repos/${repository}/rules/branches/main`);
+  if (!Array.isArray(rules.body)) {
+    gitHubSkipped(rules, "the checks for main's protection");
+  } else {
+    const types = new Set(rules.body.map((rule) => rule.type));
+    const checks = rules.body
+      .filter((rule) => rule.type === "required_status_checks")
+      .flatMap((rule) => rule.parameters?.required_status_checks ?? [])
+      .map((check) => check.context);
+    if (types.has("pull_request") && checks.includes("check")) {
+      pass("main is protected: changes need a pull request with a passing check.");
+    } else {
+      warn(
+        types.size
+          ? "main is protected, but not with both a pull request and the check required."
+          : "main isn't protected yet, so a push straight to main still goes live.",
+        "add a ruleset for main (Settings, Rules, Rulesets) that requires a pull request and the status check named check.",
+      );
+    }
+  }
+
+  // The live site, and whether its stylesheet loads: with a wrong base, the page arrives
+  // but its files don't.
+  const [owner, name] = repository.split("/");
+  const site = `https://${owner.toLowerCase()}.github.io/${name}/`;
+  try {
+    const page = await fetch(site, { signal: AbortSignal.timeout(10000) });
+    const html = page.ok ? await page.text() : "";
+    if (!html.includes("Generic Grocery Co.")) {
+      fail(
+        `${site} doesn't show the store's site (status ${page.status}).`,
+        "check the deploy run in the Actions tab, and that Settings, Pages uses GitHub Actions.",
+      );
+      return;
+    }
+    const css = /href="([^"]+\.css)"/.exec(html)?.[1];
+    const styles = css && (await fetch(new URL(css, site), { signal: AbortSignal.timeout(10000) }));
+    if (styles?.ok) {
+      pass(`The store's site is live at ${site}, with its styles.`);
+    } else {
+      fail(
+        `${site} is live, but its stylesheet ${css ?? ""} doesn't load, so the page shows without styles.`,
+        "check Vite's base in vite.config.js, then look at the addresses in the built dist/index.html.",
+      );
+    }
+  } catch {
+    warn(`${site} didn't answer.`, "check your internet connection, then run the check again.");
+  }
+}
+
 // --- GitHub (course 3 on) -----------------------------------------------------------
 
 // Each course's work arrives as issues with these titles. They're found by title, because
@@ -611,6 +718,11 @@ const issueGroups = [
     "Add ESLint and Prettier",
     "Show a closing-soon notice on the home page",
     "Add a Christmas turkey pre-order page",
+  ],
+  [
+    "Put the store's site live",
+    "Add the deals for the week of December 16",
+    "Add the deals for the week of December 23",
   ],
 ];
 // The pull request whose review the course grades: it must have line comments.
@@ -680,11 +792,23 @@ function checkRemote() {
 // a learner who keeps their repository makes on main and pushes, like the courses before.
 function setupOnly() {
   const subjects = git("log", "--format=%s", "main@{upstream}..main").out.split("\n");
-  return subjects.length === 1 && subjects[0] === "Plan the move to pull requests";
+  return (
+    subjects.length === 1 &&
+    ["Plan the move to pull requests", "Plan automatic deploys"].includes(subjects[0])
+  );
 }
 
 function checkUpstream() {
   const upstream = git("rev-parse", "--abbrev-ref", "main@{upstream}");
+  // A repository made from the ZIP starts with an empty one on GitHub: until the first
+  // push, there's no origin/main, and no upstream is what's expected.
+  if (!upstream.ok && !git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/main").ok) {
+    warn(
+      "main isn't on GitHub yet, so it has no upstream branch.",
+      "git push -u origin main, once.",
+    );
+    return false;
+  }
   if (!upstream.ok) {
     fail(
       "main has no upstream branch, so git push and git pull don't know where to go.",
@@ -782,6 +906,7 @@ function checkEggPrice() {
 
 async function checkGitHub(repository) {
   // One request answers both: whether the public repository exists, and where its main is.
+  // An empty repository answers 409: it exists and is public, but nothing is pushed yet.
   const branch = await gitHub(`/repos/${repository}/commits/main`);
   if (branch.status === 404) {
     fail(
@@ -790,15 +915,25 @@ async function checkGitHub(repository) {
     );
     return;
   }
-  if (!branch.body) {
+  // No answer at all, or the hourly limit: the issues would fail the same way.
+  if (branch.status === 0 || branch.limited) {
     gitHubSkipped(branch, "the GitHub checks");
     return;
   }
-  pass(`GitHub has your public repository ${repository}.`);
   const local = git("rev-parse", "main").out;
-  if (branch.body.sha === local) {
+  if (branch.status === 409) {
+    pass(`GitHub has your public repository ${repository}, still empty.`);
+    // Without an upstream, checkUpstream already said that main isn't pushed yet.
+    if (git("rev-parse", "--abbrev-ref", "main@{upstream}").ok) {
+      warn("GitHub's repository is empty, so main isn't on it yet.", "git push.");
+    }
+  } else if (!branch.body) {
+    gitHubSkipped(branch, "the checks for GitHub's main");
+  } else if (branch.body.sha === local) {
+    pass(`GitHub has your public repository ${repository}.`);
     pass("GitHub's main is the same commit as yours.");
   } else {
+    pass(`GitHub has your public repository ${repository}.`);
     const known = git("cat-file", "-e", `${branch.body.sha}^{commit}`).ok;
     warn(
       `GitHub's main is at ${branch.body.sha.slice(0, 7)}, yours is at ${local.slice(0, 7)}.`,
@@ -808,6 +943,7 @@ async function checkGitHub(repository) {
     );
   }
 
+  // The issues are found by title, whether or not main is on GitHub yet.
   const issues = await gitHub(`/repos/${repository}/issues?state=all&per_page=100`);
   if (!Array.isArray(issues.body)) {
     gitHubSkipped(issues, "the issue checks");
@@ -847,8 +983,10 @@ async function checkGitHub(repository) {
     }
   });
 
-  // The review is graded only once the course's turkey issue exists.
-  if (!byTitle.has(reviewedPullRequest.toLowerCase())) {
+  // The review is graded in course 4: once its turkey issue exists, and until a later
+  // course's issues do.
+  const later = issueGroups[2].some((title) => byTitle.has(title.toLowerCase()));
+  if (!byTitle.has(reviewedPullRequest.toLowerCase()) || later) {
     return;
   }
   // The issues list has the pull requests too, so the review's pull request is found there
@@ -915,6 +1053,9 @@ if (checkGitInstalled() && checkRepository()) {
   if (repository) {
     await checkGitHub(repository);
     await checkGoneBranches(repository);
+    if (existsSync(deployWorkflow)) {
+      await checkDeploy(repository);
+    }
   }
   checkClean();
 }
