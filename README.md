@@ -52,6 +52,7 @@ it first. `npm run check` reports on the repository.
 | `.prettierrc`, `.prettierignore`                                             | Prettier's settings, and the files it leaves as they are                           |
 | `eslint.config.js`                                                           | ESLint's rules, and which files it checks                                          |
 | `.github/workflows/check.yml`                                                | The check every pull request into `main` runs                                      |
+| `.github/workflows/deploy.yml`                                               | Builds the site and publishes it on GitHub Pages after every push to `main`        |
 | `src/vendor/curbside.js`                                                     | A stand-in for Generic Curbside's pickup widget: `mountCurbside(element, { key })` |
 | `src/pickup.js`                                                              | Puts Generic Curbside's widget on the pickup page, with the key from `.env`        |
 | `.env.example`                                                               | The values `.env` needs, with a placeholder instead of the key                     |
