@@ -40,7 +40,10 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_CURBSIDE_KEY: ${{ secrets.VITE_CURBSIDE_KEY }}
+          # Generic Curbside's publishable key, from the repository's Actions variables
+          # (Settings, Secrets and variables, Actions). Vite puts it in the site's public
+          # JavaScript, so it's a variable, not a secret: a secret wouldn't hide it there.
+          VITE_CURBSIDE_KEY: ${{ vars.VITE_CURBSIDE_KEY }}
       - name: Setup Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Upload artifact
