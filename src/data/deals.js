@@ -6,7 +6,7 @@ export const deals = [
   { item: "Large brown eggs", unit: "dozen", regular: 549, sale: 499 },
   { item: "Clementines, 3 lb bag", unit: "each", regular: 599, sale: 449 },
   { item: "All-purpose flour, 5 lb", unit: "each", regular: 449, sale: 349 },
-  { item: "Unsalted butter, 1 lb", unit: "each", regular: 549, sale: 429 }
+  { item: "Unsalted butter, 1 lb", unit: "each", regular: 549, sale: 429 },
   { item: "Chocolate chips, 12 oz", unit: "each", regular: 449, sale: 349 },
   { item: "Russet potatoes, 5 lb bag", unit: "each", regular: 499, sale: 349 },
   { item: "Fresh cranberries, 12 oz bag", unit: "each", regular: 349, sale: 249 },
