@@ -67,3 +67,5 @@ it, with `Closes #` and the issue's number in its description.
 
 Every pull request into `main` runs the check in `.github/workflows/check.yml`: lint,
 formatting and the build, as on your computer.
+
+Changes to main go through a pull request with a passing check.
